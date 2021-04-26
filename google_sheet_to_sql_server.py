@@ -1,19 +1,17 @@
 from __future__ import print_function  ## this one must occur at the beginning of the file
 import pandas as pd
-import cx_Oracle
 import numpy as np
 import pyodbc
-import numpy as np
 from datetime import date
 from cryptography.fernet import Fernet
 import smtplib
-import re
 import pickle
 import os.path
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from fuzzywuzzy import fuzz
+
 
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
@@ -34,7 +32,7 @@ def main():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES) # here enter the name of your downloaded JSON file
+                'credentials.json', SCOPES) #  JSON file downloaded after enabling the google sheet API,store in the same folder where our code will be saved.
             creds = flow.run_local_server(port=0)
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
@@ -53,72 +51,73 @@ def main():
 
 main()
 
+# get dataframe from the table in google sheet
 df=pd.DataFrame(values_input[1:], columns=values_input[0])
-df=df.loc[df['Select Your Business Unit']=='OPERATIONS']
+
+# remove middle names and change to upper cases
 df["Vehicle Coordinator's Name:"]=(df["Vehicle Coordinator's Name:"].str.split(' ').str[0].str.upper()+' '+df["Vehicle Coordinator's Name:"].str.split(' ').str[-1].str.upper())
 
+# get coordinator names from email and change to upper case
 df['coordinator']=df["Vehicle Coordinator's Email:"].str.split('@').str[0].str.replace('.',' ')
 df['coordinator']=df['coordinator'].str.replace('_',' ').str.upper()
-units=df.loc[df["coordinator"].        isin(['WILLIAMJ','BILl','BOb','DARREN','DULAL','FEREIDOUN','MRINGI']),  'Unit Number'].tolist()
 
 
-
-
-
+# set up sql server connection
 sql_conn = pyodbc.connect('DRIVER={ODBC Driver 13 for SQL Server}; SERVER=server; DATABASE=database;UID=prsbiuser;PWD=pwd; Trusted_Connection=no')
 
+# access HR dataset in sql server to get a list of correct employees'names
 sql_query = " select * from [discovery].[Hierarchy_permanent]"
 sql_query1 = " select * from [discovery].[PSEMPLOYEE]"
-
 df_sql = pd.read_sql(sql_query, sql_conn)
 df_sql_ora=pd.read_sql(sql_query1, sql_conn)
+
+# remove middle name in HR dataset
 df_sql_ora['full']=df_sql_ora.Firstname.str.split(' ').str[0]+' '+df_sql_ora.LastName
 
 
-
-right_first=(df_sql.Employee_name.str.split(' ').str[0]).unique()
-right_last=(df_sql.Employee_name.str.split(' ').str[-1]).unique()
-gs=(df_sql.GS.str.split(' ').str[0]+' '+df_sql.GS.str.split(' ').str[-1]).unique().tolist()
+# make a list of correct employee names and sort alphabetically
 right_name=(df_sql.Employee_name.str.split(' ').str[0]+' '+df_sql.Employee_name.str.split(' ').str[-1]).unique().tolist()
-right_name.extend(gs)
 right_name.sort()
 
-
-cpss_first=df["coordinator"].str.split(' ').str[0].unique()
-cpss_last=df["coordinator"].str.split(' ').str[-1].unique()
-cpss_name=(df["coordinator"].str.split(' ').str[0]+' '+df["coordinator"].str.split(' ').str[-1]).unique()
-
+# get a list of employee names on google sheet that presents with typos 
+google_name=(df["coordinator"].str.split(' ').str[0]+' '+df["coordinator"].str.split(' ').str[-1]).unique()
 
 
 pairs_full=dict()
-for i in cpss_name:
+for i in google_name:
     for j in right_name:
         Str2=j
+        # iterate through google name list and HR names list and use fuzzy ratio to determine the similarity between the two names
         Ratio = fuzz.ratio(Str1,Str2)
-           
-        if Ratio==100 :# and len(Str1)==len(Str2):
+
+        # if a name in google sheet matches a nmae in HR name list 100%, we add that name pair to the pairs_full dictionary  
+        if Ratio==100 :
             pairs_full[i]=j
             break
-  
-        if Ratio>=70 and ((Str1[:3]==Str2[:3] and Str1.split(' ')[1][:3]==Str2.split(' ')[1][:3]) or                          (Str1[:2]==Str2[:2] and Str1[-3:]==Str2[-3:]) or 
-                         (Str1.split(' ')[0][-3:]==Str2.split(' ')[0][-3:] and Str1[-3:]==Str2[-3:])):
 
+        # if the a name matches 70%, but part of the first name and part of the last name match HR name list, we also add it to the dictionary   
+        if Ratio>=70 
+            and ((Str1[:3]==Str2[:3] and Str1.split(' ')[1][:3]==Str2.split(' ')[1][:3]) 
+            or (Str1[:2]==Str2[:2] and Str1[-3:]==Str2[-3:]) 
+            or (Str1.split(' ')[0][-3:]==Str2.split(' ')[0][-3:] and Str1[-3:]==Str2[-3:])):
             pairs_full[i]=j
             break
-    if i not in pairs_full.keys():
-        pairs_full[i]=i
 
-
+# replace names with the correct spellings
 df["coordinator"]=df["coordinator"].map (pairs_full)
 
+# Allows Python code to execute sql command in a database session.
 cursor = sql_conn.cursor()
 
+# set up error handling 
 try:
+    # create a table in sql database if this table doesn't exist
     cursor.execute("Drop table  [discovery].[vehicle request]\
                 create table [discovery].[vehicle request] ([Timestamp] datetime, \
         [Select Your Business Unit] varchar(200), [Coordinator] varchar (100), [Email]\
         varchar(100), [Select Rental Start Date] date,[Select Rental End Date] date,[Unit Number]\
         varchar(100))")
+    # insert data in each row
     for index,row in df.iterrows():
         cursor.execute("INSERT INTO [discovery].[vehicle request]([Timestamp],[Select Your Business Unit],\
         [Coordinator], [Email],  [Select Rental Start Date]\
@@ -129,7 +128,7 @@ try:
 
     sql_conn.close()
     
-    
+# send an email for error notification   
 except Exception as e:
     msg="""From: Test <test@gmail.com>
     To: abc <abc@gmail.com>
