@@ -66,8 +66,8 @@ df['coordinator']=df['coordinator'].str.replace('_',' ').str.upper()
 sql_conn = pyodbc.connect('DRIVER={ODBC Driver 13 for SQL Server}; SERVER=server; DATABASE=database;UID=prsbiuser;PWD=pwd; Trusted_Connection=no')
 
 # access HR dataset in sql server to get a list of correct employees'names
-sql_query = " select * from [discovery].[Hierarchy_permanent]"
-sql_query1 = " select * from [discovery].[PSEMPLOYEE]"
+sql_query = " select * from [db].[Hierarchy_permanent]"
+sql_query1 = " select * from [db].[PSEMPLOYEE]"
 df_sql = pd.read_sql(sql_query, sql_conn)
 df_sql_ora=pd.read_sql(sql_query1, sql_conn)
 
@@ -112,14 +112,14 @@ cursor = sql_conn.cursor()
 # set up error handling 
 try:
     # create a table in sql database if this table doesn't exist
-    cursor.execute("Drop table  [discovery].[vehicle request]\
-                create table [discovery].[vehicle request] ([Timestamp] datetime, \
+    cursor.execute("Drop table  [db].[vehicle request]\
+                create table [db].[vehicle request] ([Timestamp] datetime, \
         [Select Your Business Unit] varchar(200), [Coordinator] varchar (100), [Email]\
         varchar(100), [Select Rental Start Date] date,[Select Rental End Date] date,[Unit Number]\
         varchar(100))")
     # insert data in each row
     for index,row in df.iterrows():
-        cursor.execute("INSERT INTO [discovery].[vehicle request]([Timestamp],[Select Your Business Unit],\
+        cursor.execute("INSERT INTO [db].[vehicle request]([Timestamp],[Select Your Business Unit],\
         [Coordinator], [Email],  [Select Rental Start Date]\
         ,[Select Rental End Date],[Unit Number]) values (?,?,?,?,?,?,?)", row['Timestamp'],  row['Select Your Business Unit'], \
             row["coordinator"],row["Vehicle Coordinator's Email:"],row['Select Rental Start Date'],\
